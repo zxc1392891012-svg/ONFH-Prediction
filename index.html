@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ONFH Risk Prediction after CSIF for FNFs</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/onnxruntime-web/dist/ort.min.js"></script>
+    <style>
+        body {
+            background-color: #f5f5f5;
+            font-family: 'Arial', sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+        .sidebar {
+            flex: 1;
+            min-width: 300px;
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            padding: 20px;
+        }
+        .main-panel {
+            flex: 2;
+            min-width: 300px;
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            padding: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        select, input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        .btn-primary {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 12px;
+            width: 100%;
+            border-radius: 4px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        .btn-primary:hover {
+            background-color: #0056b3;
+        }
+        .result-title {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 20px;
+        }
+        .chart-container {
+            width: 400px;
+            height: 400px;
+            margin: 0 auto;
+        }
+        .risk-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        .risk-table th, .risk-table td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: center;
+        }
+        .risk-table th {
+            background-color: #f8f9fa;
+        }
+        .recommendation {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+        }
+        .high-risk {
+            background-color: #FFEEEE;
+            border-left: 4px solid #ED0000;
+        }
+        .medium-risk {
+            background-color: #FFF3CD;
+            border-left: 4px solid #FFC107;
+        }
+        .low-risk {
+            background-color: #EEF7FF;
+            border-left: 4px solid #0099B4;
+        }
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 20px 0;
+        }
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 2s linear infinite;
+            margin: 0 auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Sidebar for inputs -->
+        <div class="sidebar">
+            <h3>Patient Clinical Parameters</h3>
+            
+            <div class="form-group">
+                <label for="Trauma_mechanism">Trauma Mechanism</label>
+                <select id="Trauma_mechanism">
+                    <option value="1">Low violence injury</option>
+                    <option value="2" selected>High violence injury</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="Fracture_type">Fracture Type</label>
+                <select id="Fracture_type">
+                    <option value="1" selected>Subcapital</option>
+                    <option value="2">Transcervical</option>
+                    <option value="3">Base neck</option>
+                    <option value="4">Head and neck</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="Garden">Garden Classification</label>
+                <select id="Garden">
+                    <option value="1">Type I</option>
+                    <option value="2">Type II</option>
+                    <option value="3" selected>Type III</option>
+                    <option value="4">Type IV</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="Reset_quality">Reduction Quality</label>
+                <select id="Reset_quality">
+                    <option value="1">Garden I</option>
+                    <option value="2" selected>Garden II</option>
+                    <option value="3">Garden III</option>
+                    <option value="4">Garden IV</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="VN">VN Classification</label>
+                <select id="VN">
+                    <option value="1">Type I</option>
+                    <option value="2" selected>Type II</option>
+                    <option value="3">Type III</option>
+                    <option value="4">Type IV</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="TT">Traumatic Time (days)</label>
+                <input type="number" id="TT" min="0" max="300" value="60" step="1">
+            </div>
+            
+            <div class="form-group">
+                <label for="ST">Surgical Time (hours)</label>
+                <input type="number" id="ST" min="0" max="20" value="3" step="0.1">
+            </div>
+            
+            <div class="form-group">
+                <label for="NEU">Neutrophil Count (10^9/L)</label>
+                <input type="number" id="NEU" min="0" max="30" value="8.14" step="0.01">
+            </div>
+            
+            <div class="form-group">
+                <label for="LYM">Lymphocyte Count (10^9/L)</label>
+                <input type="number" id="LYM" min="0" max="10" value="1.14" step="0.01">
+            </div>
+            
+            <button id="predictButton" class="btn-primary">Predict Risk</button>
+            
+            <div id="loading" class="loading">
+                <div class="spinner"></div>
+                <p>Calculating risk...</p>
+            </div>
+        </div>
+        
+        <!-- Main panel for results -->
+        <div class="main-panel">
+            <h2 class="result-title">Femoral Head Necrosis Risk Prediction Results</h2>
+            
+            <div class="chart-container">
+                <canvas id="riskChart"></canvas>
+            </div>
+            
+            <h3 class="result-title">Risk Assessment Details</h3>
+            
+            <table class="risk-table" id="riskTable">
+                <thead>
+                    <tr>
+                        <th>Metric</th>
+                        <th>Value</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Femoral Head Necrosis Probability</td>
+                        <td id="probabilityValue">-</td>
+                    </tr>
+                    <tr>
+                        <td>Risk Level</td>
+                        <td id="riskLevelValue">-</td>
+                    </tr>
+                    <tr>
+                        <td>Risk Description</td>
+                        <td id="riskDescriptionValue">-</td>
+                    </tr>
+                </tbody>
+            </table>
+            
+            <div id="recommendation" class="recommendation">
+                <h4>Clinical Recommendations:</h4>
+                <p>Please click "Predict Risk" to get personalized recommendations.</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let chart = null;
+        let session = null;
+        
+        // Load ONNX model when page loads
+        async function loadModel() {
+            try {
+                session = await ort.InferenceSession.create('./catboost_model.onnx');
+                console.log('Model loaded successfully');
+            } catch (error) {
+                console.error('Failed to load model:', error);
+                alert('Model loading failed. Please check if the model file exists.');
+            }
+        }
+        
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            loadModel();
+            initializeChart();
+        });
+        
+        // Initialize chart
+        function initializeChart() {
+            const ctx = document.getElementById('riskChart').getContext('2d');
+            chart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Necrosis Risk', 'No Necrosis Risk'],
+                    datasets: [{
+                        data: [0, 100],
+                        backgroundColor: ['#0099B4FF', '#E8F6F8'],
+                        borderWidth: 2,
+                        borderColor: 'white'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'right',
+                            labels: {
+                                font: {
+                                    size: 14
+                                }
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `${context.label}: ${context.parsed}%`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Get all input values
+        function getInputValues() {
+            return [
+                parseFloat(document.getElementById('Trauma_mechanism').value),
+                parseFloat(document.getElementById('Fracture_type').value),
+                parseFloat(document.getElementById('Garden').value),
+                parseFloat(document.getElementById('Reset_quality').value),
+                parseFloat(document.getElementById('VN').value),
+                parseFloat(document.getElementById('TT').value),
+                parseFloat(document.getElementById('ST').value),
+                parseFloat(document.getElementById('NEU').value),
+                parseFloat(document.getElementById('LYM').value)
+            ];
+        }
+        
+        // Make prediction using ONNX model
+        async function makePrediction(inputs) {
+            try {
+                // Convert inputs to Float32Array
+                const inputTensor = new ort.Tensor('float32', new Float32Array(inputs), [1, inputs.length]);
+                
+                // Run the model
+                const feeds = { input: inputTensor };
+                const results = await session.run(feeds);
+                
+                // Get prediction result
+                const output = results.output.data;
+                const probability = output[0];
+                
+                return probability;
+            } catch (error) {
+                console.error('Prediction error:', error);
+                throw error;
+            }
+        }
+        
+        // Update chart with prediction results
+        function updateChart(probability) {
+            const riskPercent = probability * 100;
+            const safePercent = 100 - riskPercent;
+            
+            // Update chart data
+            chart.data.datasets[0].data = [riskPercent, safePercent];
+            
+            // Update colors based on risk level
+            if (probability >= 0.5) {
+                chart.data.datasets[0].backgroundColor = ['#ED0000FF', '#FDE8E8'];
+            } else {
+                chart.data.datasets[0].backgroundColor = ['#0099B4FF', '#E8F6F8'];
+            }
+            
+            chart.update();
+        }
+        
+        // Update results table
+        function updateResultsTable(probability) {
+            const probabilityElement = document.getElementById('probabilityValue');
+            const riskLevelElement = document.getElementById('riskLevelValue');
+            const riskDescriptionElement = document.getElementById('riskDescriptionValue');
+            
+            // Format probability
+            probabilityElement.textContent = `${(probability * 100).toFixed(2)}%`;
+            
+            // Determine risk level
+            let riskLevel, riskDescription;
+            if (probability >= 0.7) {
+                riskLevel = 'Very High Risk';
+                riskDescription = 'Probability > 70%';
+            } else if (probability >= 0.5) {
+                riskLevel = 'High Risk';
+                riskDescription = 'Probability 50-70%';
+            } else if (probability >= 0.3) {
+                riskLevel = 'Moderate Risk';
+                riskDescription = 'Probability 30-50%';
+            } else {
+                riskLevel = 'Low Risk';
+                riskDescription = 'Probability < 30%';
+            }
+            
+            riskLevelElement.textContent = riskLevel;
+            riskDescriptionElement.textContent = riskDescription;
+            
+            // Update recommendation
+            updateRecommendation(probability);
+        }
+        
+        // Update clinical recommendations
+        function updateRecommendation(probability) {
+            const recommendationElement = document.getElementById('recommendation');
+            
+            let html = '';
+            
+            if (probability >= 0.7) {
+                html = `
+                    <div class="recommendation high-risk">
+                        <h4 style="color: #ED0000;">Clinical Recommendations:</h4>
+                        <p>1. Recommend regular hip X-ray and MRI examinations at 3, 6, and 12 months postoperatively</p>
+                        <p>2. Avoid early weight-bearing on the affected limb, recommend using crutches for at least 6 months</p>
+                        <p>3. Consider using bone healing promoting drugs (such as teriparatide)</p>
+                        <p>4. Closely monitor changes in blood routine and inflammation indicators</p>
+                    </div>
+                `;
+            } else if (probability >= 0.5) {
+                html = `
+                    <div class="recommendation medium-risk">
+                        <h4 style="color: #856404;">Clinical Recommendations:</h4>
+                        <p>1. Recommend hip X-ray examinations at 6 and 12 months postoperatively</p>
+                        <p>2. Partial weight-bearing on the affected limb, avoid full weight-bearing within 3 months postoperatively</p>
+                        <p>3. Regularly monitor inflammation indicators and bone metabolism indicators</p>
+                        <p>4. Strengthen nutritional support, supplement calcium and vitamin D</p>
+                    </div>
+                `;
+            } else {
+                html = `
+                    <div class="recommendation low-risk">
+                        <h4 style="color: #0099B4;">Clinical Recommendations:</h4>
+                        <p>1. Routine postoperative follow-up, hip X-ray examination at 12 months postoperatively</p>
+                        <p>2. Gradually increase weight-bearing according to rehabilitation plan</p>
+                        <p>3. Maintain good lifestyle habits, quit smoking and limit alcohol</p>
+                        <p>4. Balanced diet, appropriate calcium supplementation</p>
+                    </div>
+                `;
+            }
+            
+            recommendationElement.innerHTML = html;
+        }
+        
+        // Main prediction function
+        async function predictRisk() {
+            // Show loading spinner
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('predictButton').disabled = true;
+            
+            try {
+                // Get input values
+                const inputs = getInputValues();
+                
+                // Make prediction
+                const probability = await makePrediction(inputs);
+                
+                // Ensure probability is between 0 and 1
+                const safeProbability = Math.max(0, Math.min(1, probability));
+                
+                // Update UI
+                updateChart(safeProbability);
+                updateResultsTable(safeProbability);
+                
+                console.log('Prediction successful:', safeProbability);
+            } catch (error) {
+                console.error('Prediction failed:', error);
+                alert('Prediction failed. Please try again or check the console for errors.');
+            } finally {
+                // Hide loading spinner
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('predictButton').disabled = false;
+            }
+        }
+        
+        // Add event listener to predict button
+        document.getElementById('predictButton').addEventListener('click', predictRisk);
+    </script>
+</body>
+</html>
